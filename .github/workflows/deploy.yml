@@ -1,0 +1,40 @@
+name: Deploy Docker Space
+on:
+  push:
+    branches: [main]
+    paths: [Dockerfile, app.py, web/**, requirements.txt, README.md]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cagents-space
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Verify source
+        run: |
+          python3 -m py_compile app.py
+          node --check web/app.mjs
+      - name: Upload Docker Space
+        uses: huggingface/hub-sync@v0.3.0
+        with:
+          github_repo_id: Wuhpondiscord/cagents
+          huggingface_repo_id: wuhp/cagents
+          hf_token: ${{ secrets.HF_TOKEN }}
+          space_sdk: docker
+          delete_removed: 'false'
+          include: |
+            README.md
+            Dockerfile
+            requirements.txt
+            app.py
+            web/**
