@@ -14,9 +14,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir torch==2.8.0 --index-url https://download.pytorch.org/whl/cu128 \
     && pip install --no-cache-dir -r requirements.txt
-COPY app.py .
+COPY app.py agent.py ./
 COPY web/ ./web/
 COPY --from=browser /build/node_modules/@wllama/wllama/esm/ ./web/vendor/
 USER user
 EXPOSE 7860
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860", "--no-access-log"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860", "--no-access-log", "--ws-max-size", "4194304"]

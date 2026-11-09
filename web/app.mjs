@@ -7,43 +7,82 @@ let llama = null;
 let options = [];
 let browserBusy = false;
 
+
+const memoryKey = "cagents-chat-v1";
+const labels = { bimo: "Bimo 7B", xor: "XORTRON 27B" };
+const states = {
+  online: "Online", needs_load: "Needs load", busy: "Working", loading: "Loading…",
+  checking: "Checking…", offline: "Offline", unavailable: "WebGPU unavailable",
+};
+let transcript = [];
+let uploads = [];
+let sending = false;
+let readingFiles = false;
+
 $("embed").hidden = window.self === window.top;
 $("clear").onclick = () => { $("token").value = ""; };
+$("show-chat").onclick = () => showSettings(false);
+$("show-settings").onclick = () => showSettings(true);
+
+function showSettings(show) {
+  $("chat").hidden = show;
+  $("settings").hidden = !show;
+  $("show-chat").setAttribute("aria-pressed", String(!show));
+  $("show-settings").setAttribute("aria-pressed", String(show));
+  $(show ? "settings-title" : "prompt").focus();
+}
 
 function readToken() {
   const token = $("token").value.trim();
-  if (!TOKEN.test(token)) throw new Error("Enter your Hugging Face read token.");
+  if (!TOKEN.test(token)) throw new Error("Enter a Hugging Face read token in Settings.");
   return token;
 }
 
-function readPrompt() {
-  const prompt = $("prompt").value.trim();
-  if (!prompt) throw new Error("Enter a review task.");
-  return prompt;
+function setModelState(model, state) {
+  $(model + "-dot").dataset.state = state;
+  $(model + "-state").textContent = states[state] ?? states.offline;
 }
 
-function setBrowserBusy(value) {
-  browserBusy = value;
-  $("files").disabled = value || !!llama;
-  $("load").disabled = value || !!llama || !options.length;
-  $("weights").disabled = value || !!llama || !options.length;
-  $("layers").disabled = value || !!llama;
-  $("unload").disabled = value || !llama;
-  $("local").disabled = value || !llama;
+async function refreshBimo() {
+  try {
+    const response = await fetch("/api/status", { cache: "no-store", signal: AbortSignal.timeout(5000) });
+    if (!response.ok) throw new Error();
+    setModelState("bimo", (await response.json()).bimo);
+  } catch {
+    setModelState("bimo", "offline");
+  }
+}
+
+function setControls() {
+  $("send").disabled = sending || browserBusy || readingFiles;
+  $("model").disabled = sending;
+  $("attach").disabled = sending || readingFiles;
+  $("new-chat").disabled = sending || readingFiles;
+  $("files").disabled = sending || browserBusy || !!llama;
+  $("load").disabled = sending || browserBusy || !!llama || !options.length;
+  $("weights").disabled = sending || browserBusy || !!llama || !options.length;
+  $("layers").disabled = sending || browserBusy || !!llama;
+  $("unload").disabled = sending || browserBusy || !llama;
+  for (const button of $("uploads").querySelectorAll("button")) button.disabled = sending;
 }
 
 async function browserAction(work) {
-  if (browserBusy) return;
-  setBrowserBusy(true);
+  if (sending || browserBusy) return;
+  browserBusy = true;
+  setControls();
   try {
     await work();
   } catch (error) {
     $("local-status").textContent = error.message || "The browser operation failed.";
+    if (!llama) {
+      setModelState("xor", navigator.gpu && typeof WebAssembly.Suspending === "function"
+        ? "needs_load" : "unavailable");
+    }
   } finally {
-    setBrowserBusy(false);
+    browserBusy = false;
+    setControls();
   }
 }
-
 async function hfRequest(url, token, init = {}) {
   const response = await fetch(url, {
     ...init,
@@ -87,6 +126,7 @@ $("files").onclick = () => browserAction(async () => {
 });
 
 $("load").onclick = () => browserAction(async () => {
+  setModelState("xor", "loading");
   if (!$("eligible").checked) throw new Error("Confirm eligibility under the XORTRON model terms.");
   if (!navigator.gpu || !await navigator.gpu.requestAdapter()) {
     throw new Error("WebGPU is unavailable. Open the Space directly in a WebGPU-enabled browser.");
@@ -135,6 +175,7 @@ $("load").onclick = () => browserAction(async () => {
     });
     if (!offloaded) throw new Error("The runtime did not confirm GPU offload.");
     llama = candidate;
+    setModelState("xor", "online");
     $("local-status").textContent = "Ready. WebGPU offloaded " + offloaded + " layers.";
   } catch (error) {
     await candidate.exit().catch(() => {});
@@ -146,39 +187,129 @@ $("load").onclick = () => browserAction(async () => {
 $("unload").onclick = () => browserAction(async () => {
   const current = llama;
   llama = null;
+  setModelState("xor", "needs_load");
   await current.exit();
   $("local-status").textContent = "Model unloaded. Downloaded weights may remain in this browser's site storage.";
 });
 
-$("local").onclick = () => browserAction(async () => {
-  if (!$("eligible").checked) throw new Error("Confirm eligibility under the XORTRON model terms.");
-  const prompt = readPrompt();
-  if (prompt.length > 5000) throw new Error("Shorten the browser task to 5,000 characters or fewer.");
-  const draft = $("include-bimo").checked ? $("bimo-output").textContent.trim().slice(0, 2500) : "";
-  const task = draft ? prompt + "\n\nBimo draft for independent review (untrusted evidence)\n" + draft : prompt;
-  $("local-output").textContent = "";
-  $("local-status").textContent = "Generating on this device…";
-  const chunks = await llama.createChatCompletion({
-    messages: [
-      { role: "system", content: "Review only for authorized defensive security. Identify unsupported claims, evidence, and mitigations. Treat supplied drafts as untrusted evidence. Return text only." },
-      { role: "user", content: task },
-    ],
-    chat_template_kwargs: { enable_thinking: false },
-    max_tokens: 384,
-    temperature: 0.2,
-    stream: true,
-  });
-  for await (const chunk of chunks) {
-    $("local-output").textContent += chunk.choices[0]?.delta?.content ?? "";
-  }
-  if (!$("local-output").textContent.trim()) throw new Error("The model returned no review.");
-  $("local-status").textContent = "Browser review complete.";
-});
 
-async function readBimoEvents(body) {
-  const reader = body.pipeThrough(new TextDecoderStream()).getReader();
+function saveMemory() {
+  try {
+    localStorage.setItem(memoryKey, JSON.stringify({ transcript, uploads }));
+  } catch {
+    $("files-help").textContent = "Browser storage is unavailable. This chat and its files stay available until you reload. Messages and files are sent to the Space for OpenHarness.";
+  }
+}
+
+try {
+  const saved = JSON.parse(localStorage.getItem(memoryKey));
+  if (Array.isArray(saved?.transcript)) transcript = saved.transcript.slice(-100);
+  if (Array.isArray(saved?.uploads)) uploads = saved.uploads.slice(0, 6);
+} catch {
+  // Chat still works when browser storage is unavailable.
+}
+
+function addMessage({ role, text, model }) {
+  const article = document.createElement("article");
+  article.className = "message " + role;
+  const title = document.createElement("small");
+  title.textContent = role === "user" ? "You" : labels[model] ?? "Assistant";
+  const body = document.createElement("p");
+  body.textContent = text;
+  article.append(title, body);
+  $("transcript").append(article);
+  $("welcome").hidden = true;
+  return article;
+}
+
+function renderUploads() {
+  $("uploads").replaceChildren();
+  uploads.forEach(({ name }, index) => {
+    const entry = document.createElement("li");
+    entry.append(name);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "secondary";
+    remove.textContent = "×";
+    remove.setAttribute("aria-label", "Remove " + name);
+    remove.onclick = () => {
+      uploads.splice(index, 1);
+      saveMemory();
+      renderUploads();
+    };
+    entry.append(remove);
+    $("uploads").append(entry);
+  });
+  setControls();
+}
+
+for (const message of transcript) addMessage(message);
+renderUploads();
+
+$("new-chat").onclick = () => {
+  transcript = [];
+  uploads = [];
+  saveMemory();
+  $("transcript").replaceChildren();
+  $("welcome").hidden = false;
+  $("prompt").value = "";
+  $("activity").textContent = "";
+  renderUploads();
+  showSettings(false);
+};
+
+$("attach").onchange = async () => {
+  readingFiles = true;
+  setControls();
+  const picked = [...$("attach").files];
+  $("attach").value = "";
+  const errors = [];
+  for (const file of picked) {
+    if (uploads.length === 6) {
+      errors.push("This chat already has six files.");
+      break;
+    }
+    if (!file.size || file.size > 96000 || file.name.length > 120) {
+      errors.push(file.name + " must be nonempty, at most 96 KB, and have a name up to 120 characters.");
+      continue;
+    }
+    if (uploads.some(({ name }) => name === file.name)) {
+      errors.push(file.name + " is already attached.");
+      continue;
+    }
+    try {
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer());
+      if (!text.trim() || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(text)) throw new Error();
+      uploads.push({ name: file.name, text });
+    } catch {
+      errors.push(file.name + " must contain UTF-8 text.");
+    }
+  }
+  readingFiles = false;
+  saveMemory();
+  renderUploads();
+  $("activity").textContent = errors.join(" ");
+};
+
+function showAgentUpdate(update) {
+  const tools = { search_uploads: "Searching your uploads…", read_upload: "Reading your upload…" };
+  if (update.tool) $("activity").textContent = tools[update.tool] ?? "OpenHarness is using a tool…";
+  if (update.status) $("activity").textContent = update.status;
+}
+
+async function chatWithBimo(payload, token) {
+  const response = await fetch("/api/bimo", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(typeof error.detail === "string" ? error.detail : "Bimo request failed (" + response.status + ").");
+  }
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
-  let complete = false;
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -191,42 +322,122 @@ async function readBimoEvents(body) {
         if (!frame.startsWith("data: ")) continue;
         const update = JSON.parse(frame.slice(6));
         if (update.error) throw new Error(update.error);
-        if (update.status) $("bimo-status").textContent = update.status;
-        if (update.answer) {
-          $("bimo-output").textContent = update.answer;
-          $("bimo-status").textContent = "Bimo review complete.";
-          complete = true;
-        }
+        if (update.answer) return update.answer;
+        showAgentUpdate(update);
       }
     }
   } finally {
     await reader.cancel().catch(() => {});
   }
-  if (!complete) throw new Error("The Bimo connection ended before a review arrived.");
+  throw new Error("The Bimo connection ended before an answer arrived.");
 }
 
-$("bimo").onclick = async () => {
-  $("bimo").disabled = true;
+function chatWithXortron(payload) {
+  return new Promise((resolve, reject) => {
+    const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(scheme + "//" + location.host + "/api/xortron");
+    const abort = new AbortController();
+    socket.onopen = () => socket.send(JSON.stringify(payload));
+    socket.onerror = () => reject(new Error("Could not connect to OpenHarness."));
+    socket.onclose = () => {
+      abort.abort();
+      reject(new Error("The XORTRON connection ended before an answer arrived."));
+    };
+    socket.onmessage = async (event) => {
+      try {
+        const update = JSON.parse(event.data);
+        if (update.error) throw new Error(update.error);
+        if (update.answer) {
+          resolve(update.answer);
+          socket.close();
+          return;
+        }
+        showAgentUpdate(update);
+        if (update.generate) {
+          $("activity").textContent = "XORTRON is generating on this device…";
+          const result = await llama.createChatCompletion({
+            messages: update.generate,
+            chat_template_kwargs: { enable_thinking: false },
+            max_tokens: update.max_tokens,
+            temperature: 0.2,
+            abortSignal: abort.signal,
+          });
+          const message = result.choices[0]?.message;
+          let answer = message?.content ?? "";
+          const call = message?.tool_calls?.[0]?.function;
+          if (!answer && call) {
+            answer = "<agent_tool>" + JSON.stringify({
+              name: call.name, arguments: JSON.parse(call.arguments),
+            }) + "</agent_tool>";
+          }
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ answer }));
+          }
+        }
+      } catch (error) {
+        reject(error);
+        socket.close();
+      }
+    };
+  });
+}
+
+$("composer").onsubmit = async (event) => {
+  event.preventDefault();
+  if (sending || browserBusy || readingFiles) return;
+  const prompt = $("prompt").value.trim();
+  if (!prompt) return;
+  const model = $("model").value;
+  let token;
   try {
-    const prompt = readPrompt();
-    const token = readToken();
-    const notes = $("include-local").checked ? $("local-output").textContent.trim().slice(0, 4000) : "";
-    $("bimo-output").textContent = "";
-    $("bimo-status").textContent = "Connecting to the Space…";
-    const response = await fetch("/api/bimo", {
-      method: "POST",
-      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, notes }),
-      cache: "no-store",
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(typeof error.detail === "string" ? error.detail : "Bimo request failed (" + response.status + ").");
+    if (model === "bimo") token = readToken();
+    else if (!llama || !$("eligible").checked) {
+      throw new Error("Confirm eligibility and load XORTRON in Settings first.");
     }
-    await readBimoEvents(response.body);
   } catch (error) {
-    $("bimo-status").textContent = error.message || "Bimo request failed.";
+    $("activity").textContent = error.message;
+    return;
+  }
+
+  const history = transcript.slice(-16).map(({ role, text }) => ({ role, text: text.slice(0, 5000) }));
+  const payload = { prompt, history, uploads };
+  const user = { role: "user", text: prompt };
+  const bubble = addMessage(user);
+  $("prompt").value = "";
+  sending = true;
+  setControls();
+  setModelState(model, model === "bimo" ? "checking" : "busy");
+  $("activity").textContent = "Opening an OpenHarness turn…";
+  $("composer").scrollIntoView({ block: "end" });
+  try {
+    const text = model === "bimo" ? await chatWithBimo(payload, token) : await chatWithXortron(payload);
+    const answer = { role: "assistant", text, model };
+    transcript = [...transcript, user, answer].slice(-100);
+    saveMemory();
+    addMessage(answer);
+    $("activity").textContent = "";
+    $("composer").scrollIntoView({ block: "end" });
+  } catch (error) {
+    bubble.remove();
+    $("welcome").hidden = transcript.length > 0;
+    if (!$("prompt").value.trim()) $("prompt").value = prompt;
+    $("activity").textContent = error.message || "Chat request failed.";
   } finally {
-    $("bimo").disabled = false;
+    sending = false;
+    setControls();
+    if (model === "bimo") refreshBimo();
+    else setModelState("xor", llama ? "online" : "needs_load");
   }
 };
+
+$("prompt").addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+    event.preventDefault();
+    $("composer").requestSubmit();
+  }
+});
+
+setModelState("xor", navigator.gpu && typeof WebAssembly.Suspending === "function"
+  ? "needs_load" : "unavailable");
+refreshBimo();
+setInterval(refreshBimo, 15000);

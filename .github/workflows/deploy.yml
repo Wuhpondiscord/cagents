@@ -2,7 +2,7 @@ name: Deploy Docker Space
 on:
   push:
     branches: [main]
-    paths: [Dockerfile, app.py, web/**, requirements.txt, README.md, .github/workflows/deploy.yml]
+    paths: [Dockerfile, app.py, agent.py, web/**, requirements.txt, README.md, .github/workflows/deploy.yml]
   workflow_dispatch:
 
 permissions:
@@ -25,29 +25,51 @@ jobs:
           python-version: "3.11"
       - name: Verify source
         run: |
-          python3 -m py_compile app.py
+          python3 -m py_compile app.py agent.py
           node --check web/app.mjs
       - name: Check OpenHarness integration
         run: |
           python3 -m venv /tmp/cagents-ci
           /tmp/cagents-ci/bin/pip -q install openharness-ai==0.1.9 fastapi==0.121.3 huggingface-hub==0.36.0
           /tmp/cagents-ci/bin/python - <<'PY'
-          import asyncio
+          import json
           from unittest.mock import patch
+          from fastapi.testclient import TestClient
           from openharness.api.usage import UsageSnapshot
-          from app import BimoProvider, Review, review_bimo
+          from app import BimoProvider, app
 
-          async def main():
-              updates = asyncio.Queue()
+          def bimo_generation(provider, request):
+              messages = provider.build_messages(request)
+              if provider.tool_calls == 0:
+                  return '<agent_tool>{"name":"read_upload","arguments":{"file":"test.log"}}</agent_tool>', UsageSnapshot()
+              assert "service is listening" in messages[-1]["content"], messages
+              return "Bimo found the service.", UsageSnapshot()
+
+          upload = {"name": "test.log", "text": "startup\nservice is listening\nready"}
+          with TestClient(app, base_url="http://testserver") as client:
+              assert client.get("/api/status").json() == {"bimo": "needs_load"}
               with patch("app.load_bimo", return_value=(None, None)), patch.object(
-                  BimoProvider, "complete", return_value=("Review smoke test", UsageSnapshot())
+                  BimoProvider, "complete", bimo_generation
               ):
-                  await review_bimo(Review(prompt="Review a test configuration."), "unused", updates)
-              events = []
-              while not updates.empty():
-                  events.append(updates.get_nowait())
-              assert {"answer": "Review smoke test"} in events, events
-          asyncio.run(main())
+                  response = client.post("/api/bimo", json={"prompt": "Read the log", "uploads": [upload]},
+                                         headers={"Authorization": "Bearer hf_testtesttest"})
+                  updates = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")]
+                  assert {"tool": "read_upload"} in updates, updates
+                  assert {"answer": "Bimo found the service."} in updates, updates
+
+              with client.websocket_connect("/api/xortron", headers={"Origin": "http://testserver"}) as socket:
+                  socket.send_json({"prompt": "Follow up on the service.",
+                                    "history": [{"role": "user", "text": "Read the log"},
+                                                {"role": "assistant", "text": "Bimo found the service."}],
+                                    "uploads": [upload]})
+                  first = socket.receive_json()
+                  assert any(message["content"] == "Bimo found the service." for message in first["generate"]), first
+                  socket.send_json({"answer": '<agent_tool>{"name":"search_uploads","arguments":{"query":"ready"}}</agent_tool>'})
+                  assert socket.receive_json() == {"tool": "search_uploads"}
+                  second = socket.receive_json()
+                  assert "test.log:3: ready" in second["generate"][-1]["content"], second
+                  socket.send_json({"answer": "The service is ready."})
+                  assert socket.receive_json() == {"answer": "The service is ready."}
           PY
       - name: Check CPU quantization
         run: |
@@ -89,4 +111,5 @@ jobs:
             Dockerfile
             requirements.txt
             app.py
+            agent.py
             web/**

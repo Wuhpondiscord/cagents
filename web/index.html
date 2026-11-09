@@ -3,70 +3,71 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>cagents | Defensive review</title>
+  <title>cagents</title>
   <link rel="stylesheet" href="/assets/style.css">
   <script type="module" src="/assets/app.mjs"></script>
 </head>
 <body>
-  <main>
-    <header>
-      <p class="eyebrow">Defensive security workspace</p>
-      <h1>cagents</h1>
-      <p class="lede">Draft with Bimo on the Space. Ask XORTRON to review the draft on your device.</p>
-    </header>
-    <section class="panel" aria-labelledby="access-title">
-      <h2 id="access-title">Model access</h2>
-      <label for="token">Hugging Face read token</label>
-      <div class="row">
-        <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="hf_…" maxlength="253">
-        <button id="clear" type="button" class="secondary">Clear token</button>
-      </div>
-      <p class="hint">Use a read token with access to the model repositories. The token is kept in this page, sent to the Space for Bimo access checks, and sent directly to Hugging Face for XORTRON.</p>
-      <p class="links">
-        <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer">Token settings</a>
-        <a href="https://huggingface.co/iBimo-o/Bimo-7B-CyberAgent" target="_blank" rel="noreferrer">Bimo access</a>
-        <a href="https://huggingface.co/darkc0de/XORTRON-AgentRICO-GGUF?not-for-all-audiences=true" target="_blank" rel="noreferrer">XORTRON access and terms</a>
-      </p>
-    </section>
-    <section class="panel" aria-labelledby="task-title">
-      <h2 id="task-title">Review task</h2>
-      <label for="prompt">What should the models review?</label>
-      <textarea id="prompt" rows="5" maxlength="12000" placeholder="Describe the authorized scope and paste a short code, configuration, or log excerpt."></textarea>
-      <p class="hint">Use material you are authorized to assess. Review outputs are text for human verification.</p>
-    </section>
-    <div class="grid">
-      <section class="panel" aria-labelledby="bimo-title">
-        <p class="eyebrow">Space CPU or GPU</p>
-        <h2 id="bimo-title">Bimo 7B + OpenHarness</h2>
-        <button id="bimo" type="button">Run Bimo review</button>
-        <label class="check"><input id="include-local" type="checkbox"> Send the browser review to Bimo as notes</label>
-        <p id="bimo-status" class="hint" role="status">The first review may take several minutes to download and warm Bimo.</p>
-        <pre id="bimo-output" aria-label="Bimo output"></pre>
-      </section>
-      <section class="panel" aria-labelledby="local-title">
-        <p class="eyebrow">Browser WebGPU</p>
-        <h2 id="local-title">XORTRON AgentRICO</h2>
-        <p id="embed" class="hint" hidden><a href="https://wuhp-cagents.hf.space/" target="_blank" rel="noreferrer">Open the Space app directly</a> to use WebGPU if it is unavailable in the embedded view.</p>
-        <label class="check"><input id="eligible" type="checkbox"> I meet the model's access terms and am using it for an authorized purpose.</label>
-        <div class="row">
-          <button id="files" type="button" class="secondary">Find GGUF files</button>
-          <select id="weights" aria-label="XORTRON GGUF file" disabled><option>Find available files first</option></select>
-        </div>
-        <details class="hint"><summary>GPU memory settings</summary>
-          <label for="layers">Layers to offload (0 means all)</label>
-          <input id="layers" type="number" min="0" max="999" value="0">
-          <p>Try a smaller positive number if the model does not fit in VRAM. Remaining layers run on the CPU.</p>
-        </details>
-        <div class="row actions">
-          <button id="load" type="button" disabled>Load with WebGPU</button>
-          <button id="unload" type="button" class="secondary" disabled>Unload model</button>
-        </div>
-        <label class="check"><input id="include-bimo" type="checkbox" checked> Include Bimo's draft in the browser review</label>
-        <button id="local" type="button" disabled>Run browser review</button>
-        <p id="local-status" class="hint" role="status">The default Q3_K_M file is about 13.5 GB. Use a current Chromium browser with ample GPU memory and browser storage.</p>
-        <pre id="local-output" aria-label="Browser model output"></pre>
-      </section>
+  <header class="top">
+    <div class="top-inner">
+      <div class="brand"><span class="mark" aria-hidden="true">C</span><div><strong>cagents</strong><small>OpenHarness workspace</small></div></div>
+      <nav aria-label="Workspace">
+        <button id="show-chat" type="button" aria-pressed="true">Chat</button>
+        <button id="show-settings" type="button" aria-pressed="false">Settings</button>
+      </nav>
     </div>
+  </header>
+  <main>
+    <aside class="statuses" aria-label="Model status">
+      <div class="status"><span class="dot" data-state="checking" id="bimo-dot"></span><strong>Bimo 7B</strong><span id="bimo-state" role="status">Checking…</span></div>
+      <div class="status"><span class="dot" data-state="checking" id="xor-dot"></span><strong>XORTRON 27B</strong><span id="xor-state" role="status">Checking…</span></div>
+    </aside>
+    <section id="chat" aria-label="Chat">
+      <div id="transcript" role="log" aria-label="Conversation"></div>
+      <div id="welcome">
+        <span class="mark large" aria-hidden="true">C</span>
+        <h1>What are we working on?</h1>
+        <p>Ask a question, attach a log or code file, or switch models to get a second opinion in the same conversation.</p>
+      </div>
+      <form id="composer">
+        <label class="sr" for="prompt">Message</label>
+        <textarea id="prompt" rows="3" maxlength="5000" placeholder="Message cagents…"></textarea>
+        <ul id="uploads" aria-label="Chat files"></ul>
+        <div class="compose-controls">
+          <label class="sr" for="model">Reply model</label>
+          <select id="model"><option value="bimo">Bimo 7B</option><option value="xor">XORTRON 27B</option></select>
+          <label class="button secondary" for="attach">Attach files</label>
+          <input id="attach" type="file" class="sr" multiple aria-describedby="files-help">
+          <button id="send" type="submit">Send <span aria-hidden="true">↑</span></button>
+        </div>
+      </form>
+      <p id="activity" class="hint" role="status"></p>
+      <p id="files-help" class="hint">Attach up to six UTF-8 text, code, or log files, up to 96 KB each. Messages and attachments are sent to the Space to run OpenHarness.</p>
+    </section>
+    <section id="settings" aria-labelledby="settings-title" hidden>
+      <h1 id="settings-title" tabindex="-1">Settings</h1>
+      <section class="card">
+        <h2>Model access</h2>
+        <label for="token">Hugging Face read token</label>
+        <div class="row"><input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="hf_…" maxlength="253"><button id="clear" type="button" class="secondary">Clear token</button></div>
+        <p class="hint">The token stays in this page. Bimo uses it through the Space, and XORTRON sends it directly to Hugging Face for the download.</p>
+        <p class="links"><a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer">Token settings</a><a href="https://huggingface.co/iBimo-o/Bimo-7B-CyberAgent" target="_blank" rel="noreferrer">Bimo model</a><a href="https://huggingface.co/darkc0de/XORTRON-AgentRICO-GGUF?not-for-all-audiences=true" target="_blank" rel="noreferrer">XORTRON access terms</a></p>
+      </section>
+      <section class="card">
+        <h2>XORTRON WebGPU</h2>
+        <p class="hint" id="embed" hidden><a href="https://wuhp-cagents.hf.space/" target="_blank" rel="noreferrer">Open the standalone Space</a> for WebGPU access.</p>
+        <label class="check"><input id="eligible" type="checkbox"> I meet the model’s access terms and am using it for an authorized purpose.</label>
+        <div class="row"><button id="files" type="button" class="secondary">Find GGUF files</button><select id="weights" aria-label="XORTRON GGUF file" disabled><option>Find files first</option></select></div>
+        <details class="hint"><summary>GPU memory settings</summary><label for="layers">GPU layers (0 means all)</label><input id="layers" type="number" min="0" max="999" value="0"><p>Choose fewer layers to share work between the GPU and CPU.</p></details>
+        <div class="row"><button id="load" type="button" disabled>Load model</button><button id="unload" type="button" class="secondary" disabled>Unload model</button></div>
+        <p id="local-status" class="hint" role="status">The default Q3_K_M file is about 13.5 GB.</p>
+      </section>
+      <section class="card">
+        <h2>Chat memory</h2>
+        <p class="hint">Both models share recent chat history and attached files. This browser saves the conversation and files when storage is available. OpenHarness can compact long context during a turn.</p>
+        <button id="new-chat" type="button" class="secondary">Clear chat and files</button>
+      </section>
+    </section>
   </main>
 </body>
 </html>
