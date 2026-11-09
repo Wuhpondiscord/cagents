@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>cagents | Defensive review</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script type="module" src="/assets/app.mjs"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">Defensive security workspace</p>
+      <h1>cagents</h1>
+      <p class="lede">Draft with Bimo on the Space. Ask XORTRON to review the draft on your device.</p>
+    </header>
+    <section class="panel" aria-labelledby="access-title">
+      <h2 id="access-title">Model access</h2>
+      <label for="token">Hugging Face read token</label>
+      <div class="row">
+        <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="hf_…" maxlength="253">
+        <button id="clear" type="button" class="secondary">Clear token</button>
+      </div>
+      <p class="hint">Use a read token with access to each gated repository. The token is kept in this page, sent to the Space for Bimo access checks, and sent directly to Hugging Face for XORTRON.</p>
+      <p class="links">
+        <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer">Token settings</a>
+        <a href="https://huggingface.co/iBimo-o/Bimo-7B-CyberAgent" target="_blank" rel="noreferrer">Bimo access</a>
+        <a href="https://huggingface.co/darkc0de/XORTRON-AgentRICO-GGUF?not-for-all-audiences=true" target="_blank" rel="noreferrer">XORTRON access and terms</a>
+      </p>
+    </section>
+    <section class="panel" aria-labelledby="task-title">
+      <h2 id="task-title">Review task</h2>
+      <label for="prompt">What should the models review?</label>
+      <textarea id="prompt" rows="5" maxlength="12000" placeholder="Describe the authorized scope and paste a short code, configuration, or log excerpt."></textarea>
+      <p class="hint">Use material you are authorized to assess. Review outputs are text for human verification.</p>
+    </section>
+    <div class="grid">
+      <section class="panel" aria-labelledby="bimo-title">
+        <p class="eyebrow">Space GPU</p>
+        <h2 id="bimo-title">Bimo 7B + OpenHarness</h2>
+        <button id="bimo" type="button">Run Bimo review</button>
+        <label class="check"><input id="include-local" type="checkbox"> Send the browser review to Bimo as notes</label>
+        <p id="bimo-status" class="hint" role="status">The first review may take several minutes to download and warm Bimo.</p>
+        <pre id="bimo-output" aria-label="Bimo output"></pre>
+      </section>
+      <section class="panel" aria-labelledby="local-title">
+        <p class="eyebrow">Browser WebGPU</p>
+        <h2 id="local-title">XORTRON AgentRICO</h2>
+        <p id="embed" class="hint" hidden><a href="https://wuhp-cagents.hf.space/" target="_blank" rel="noreferrer">Open the Space app directly</a> to use WebGPU if it is unavailable in the embedded view.</p>
+        <label class="check"><input id="eligible" type="checkbox"> I meet the model's access terms and am using it for an authorized purpose.</label>
+        <div class="row">
+          <button id="files" type="button" class="secondary">Find GGUF files</button>
+          <select id="weights" aria-label="XORTRON GGUF file" disabled><option>Find available files first</option></select>
+        </div>
+        <div class="row actions">
+          <button id="load" type="button" disabled>Load with WebGPU</button>
+          <button id="unload" type="button" class="secondary" disabled>Unload model</button>
+        </div>
+        <label class="check"><input id="include-bimo" type="checkbox" checked> Include Bimo's draft in the browser review</label>
+        <button id="local" type="button" disabled>Run browser review</button>
+        <p id="local-status" class="hint" role="status">Choose a small Q4 GGUF for your first load. Weights may take several GB of browser storage.</p>
+        <pre id="local-output" aria-label="Browser model output"></pre>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

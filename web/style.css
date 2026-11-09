@@ -1,0 +1,30 @@
+* { box-sizing: border-box; }
+:root { color-scheme: dark; font: 16px/1.5 system-ui, sans-serif; color: #e9f2f5; background: #10171c; }
+body { margin: 0; }
+main { max-width: 1050px; margin: auto; padding: 2.6rem 1rem 3rem; }
+header { margin-bottom: 1.4rem; }
+h1 { font-size: clamp(2.8rem, 7vw, 4.4rem); line-height: 1.05; letter-spacing: -.06em; margin: .1rem 0; }
+h2 { font-size: 1.2rem; margin: 0 0 .7rem; }
+p { margin: .5rem 0; }
+.eyebrow { color: #78e4c0; text-transform: uppercase; font-size: .74rem; letter-spacing: .13em; font-weight: 700; }
+.lede, .hint { color: #adbec7; }
+.hint { font-size: .88rem; }
+.panel { padding: 1.15rem; background: #162129; border: 1px solid #344751; border-radius: 14px; margin-bottom: .85rem; min-width: 0; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .85rem; }
+.row { display: flex; flex-wrap: wrap; gap: .55rem; }
+.actions { margin-top: .55rem; }
+label { display: block; font-size: .9rem; margin-bottom: .3rem; }
+.check { margin: .55rem 0; }
+input, textarea, select, button { font: inherit; }
+input[type=password], textarea, select { color: inherit; background: #0d151a; border: 1px solid #49606b; border-radius: 8px; padding: .55rem; }
+input[type=password], select { flex: 1 1 13rem; min-width: 0; }
+textarea { width: 100%; resize: vertical; }
+button { cursor: pointer; padding: .55rem .8rem; border-radius: 8px; border: 1px solid transparent; font-weight: 650; color: #08231c; background: #78e4c0; }
+button.secondary { background: #22333e; border-color: #49606b; color: #e9f2f5; }
+button:disabled, select:disabled { opacity: .5; cursor: default; }
+:focus-visible { outline: 2px solid #9ef0ff; outline-offset: 2px; }
+a { color: #9ef0ff; }
+.links { display: flex; flex-wrap: wrap; gap: .75rem; font-size: .86rem; }
+pre { font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 35rem; overflow-y: auto; margin: .65rem 0 0; }
+pre:empty { display: none; }
+@media (max-width: 740px) { .grid { grid-template-columns: 1fr; gap: 0; } }

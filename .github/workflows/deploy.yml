@@ -2,7 +2,7 @@ name: Deploy Docker Space
 on:
   push:
     branches: [main]
-    paths: [Dockerfile, app.py, web/**, requirements.txt, README.md]
+    paths: [Dockerfile, app.py, web/**, requirements.txt, README.md, .github/workflows/deploy.yml]
   workflow_dispatch:
 
 permissions:
@@ -24,6 +24,33 @@ jobs:
         run: |
           python3 -m py_compile app.py
           node --check web/app.mjs
+      - name: Check OpenHarness integration
+        run: |
+          python3 -m venv /tmp/cagents-ci
+          /tmp/cagents-ci/bin/pip -q install openharness-ai==0.1.9 fastapi==0.121.3 huggingface-hub==0.36.0
+          /tmp/cagents-ci/bin/python - <<'PY'
+          import asyncio
+          from unittest.mock import patch
+          from openharness.api.usage import UsageSnapshot
+          from app import BimoProvider, Review, review_bimo
+
+          async def main():
+              updates = asyncio.Queue()
+              with patch("app.load_bimo", return_value=(None, None)), patch.object(
+                  BimoProvider, "complete", return_value=("Review smoke test", UsageSnapshot())
+              ):
+                  await review_bimo(Review(prompt="Review a test configuration."), "unused", updates)
+              events = []
+              while not updates.empty():
+                  events.append(updates.get_nowait())
+              assert {"answer": "Review smoke test"} in events, events
+          asyncio.run(main())
+          PY
+      - name: Check browser runtime package
+        run: |
+          npm install --prefix /tmp/cagents-web --no-audit --no-fund --ignore-scripts @wllama/wllama@3.8.1
+          test -f /tmp/cagents-web/node_modules/@wllama/wllama/esm/index.js
+          test -f /tmp/cagents-web/node_modules/@wllama/wllama/esm/wasm/wllama.wasm
       - name: Upload Docker Space
         uses: huggingface/hub-sync@v0.3.0
         with:
