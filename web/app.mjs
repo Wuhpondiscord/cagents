@@ -1,6 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const HF = "https://huggingface.co";
 const XOR = "darkc0de/XORTRON-AgentRICO-GGUF";
+const PREFERRED_GGUF = /[._-]q3_k_m(?:-\d{5}-of-\d{5})?\.gguf$/i;
 const TOKEN = /^hf_[A-Za-z0-9]{10,250}$/;
 let llama = null;
 let options = [];
@@ -78,7 +79,11 @@ $("files").onclick = () => browserAction(async () => {
     $("weights").append(new Option("No GGUF files found"));
     throw new Error("No text-model GGUF files were listed by the repository.");
   }
-  $("local-status").textContent = "Select a quantization and load it with WebGPU.";
+  const preferredIndex = options.findIndex(({ path }) => PREFERRED_GGUF.test(path));
+  if (preferredIndex >= 0) $("weights").selectedIndex = preferredIndex;
+  $("local-status").textContent = preferredIndex >= 0
+    ? "Q3_K_M is selected for WebGPU. Choose a smaller file if your device has limited memory."
+    : "Select a quantization and load it with WebGPU.";
 });
 
 $("load").onclick = () => browserAction(async () => {

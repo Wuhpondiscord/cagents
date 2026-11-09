@@ -14,7 +14,7 @@ A two-model workspace for authorized defensive security review.
 
 1. Request access to [Bimo 7B](https://huggingface.co/iBimo-o/Bimo-7B-CyberAgent) and [XORTRON AgentRICO](https://huggingface.co/darkc0de/XORTRON-AgentRICO-GGUF?not-for-all-audiences=true) as needed. Enter a Hugging Face read token with permission to access the models. GitHub's deployment secret is separate.
 2. Describe the task and run Bimo. The Space uses [HKUDS OpenHarness](https://github.com/HKUDS/OpenHarness) with an in-process Bimo provider and an empty tool registry.
-3. Find and load an approved XORTRON GGUF using [wllama](https://github.com/ngxson/wllama). Start with the smallest file, about 10.9 GB at the time of setup. Open the [standalone Space app](https://wuhp-cagents.hf.space/) if WebGPU is unavailable in the Hugging Face iframe.
+3. Find and load an approved XORTRON GGUF using [wllama](https://github.com/ngxson/wllama). The default is the publisher’s 3-bit-class Q3_K_M file (about 13.5 GB). Q3_K_S and Q2_K are smaller choices if your device is short on memory. Open the [standalone Space app](https://wuhp-cagents.hf.space/) if WebGPU is unavailable in the Hugging Face iframe.
 4. Run an independent browser review with Bimo's draft as optional context. To send that browser review back to the Space, select the notes checkbox before running Bimo again. Both outputs are text for human review.
 
 ## Runtime
