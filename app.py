@@ -30,6 +30,8 @@ REVISION = os.environ.get("BIMO_REVISION", "main")
 WEIGHT = "model-00001-of-00004.safetensors"
 MAX_INPUT = 8192
 MAX_OUTPUT = 512
+CPU_MAX_INPUT = 4096
+CPU_MAX_OUTPUT = 256
 WEB = Path(__file__).resolve().parent / "web"
 SYSTEM = (
     "You are Bimo, an assistant for authorized defensive security review. "
@@ -101,25 +103,37 @@ def load_bimo(token):
     global model_cache
     import torch
 
-    if not torch.cuda.is_available():
-        raise ReviewError("Bimo needs CUDA. Select NVIDIA GPU hardware in the Space settings.")
     revision = authorized_revision(token)
     if model_cache is not None and model_cache[0] == revision:
         return model_cache[1:]
 
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from transformers import AutoTokenizer
 
     if model_cache is not None:
         model_cache = None
-        torch.cuda.empty_cache()
-    dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     source = {"revision": revision, "token": token, "trust_remote_code": False}
     tokenizer = AutoTokenizer.from_pretrained(BIMO, **source)
-    model = AutoModelForCausalLM.from_pretrained(
-        BIMO,
+    model = load_quantized_model(BIMO, **source)
+    model_cache = (revision, tokenizer, model)
+    return tokenizer, model
+
+
+def load_quantized_model(model_id, **source):
+    import torch
+    from transformers import AutoModelForCausalLM, BitsAndBytesConfig
+
+    has_cuda = torch.cuda.is_available()
+    device = "cuda:0" if has_cuda else "cpu"
+    dtype = torch.float16 if has_cuda and not torch.cuda.is_bf16_supported() else torch.bfloat16
+    if not has_cuda:
+        torch.set_num_threads(2)
+    return AutoModelForCausalLM.from_pretrained(
+        model_id,
         **source,
         use_safetensors=True,
-        device_map={"": 0},
+        device_map={"": device},
         dtype=dtype,
         quantization_config=BitsAndBytesConfig(
             load_in_4bit=True,
@@ -128,8 +142,6 @@ def load_bimo(token):
             bnb_4bit_compute_dtype=dtype,
         ),
     ).eval()
-    model_cache = (revision, tokenizer, model)
-    return tokenizer, model
 
 
 class BimoProvider:
@@ -147,13 +159,16 @@ class BimoProvider:
             messages, add_generation_prompt=True, return_tensors="pt", return_dict=True
         )
         input_size = encoded["input_ids"].shape[-1]
-        if input_size > MAX_INPUT:
-            raise ReviewError("The Bimo input exceeds 8,192 tokens. Shorten the task or notes.")
+        on_cpu = self.model.device.type == "cpu"
+        input_limit = CPU_MAX_INPUT if on_cpu else MAX_INPUT
+        if input_size > input_limit:
+            raise ReviewError(f"The Bimo input exceeds {input_limit:,} tokens. Shorten the task or notes.")
+        output_limit = CPU_MAX_OUTPUT if on_cpu else MAX_OUTPUT
         encoded = encoded.to(self.model.device)
         with torch.inference_mode():
             output = self.model.generate(
                 **encoded,
-                max_new_tokens=min(request.max_tokens, MAX_OUTPUT),
+                max_new_tokens=min(request.max_tokens, output_limit),
                 do_sample=False,
                 temperature=None,
                 top_p=None,
@@ -182,7 +197,8 @@ async def review_bimo(review, token, updates):
         await updates.put({"status": "Checking Bimo access and warming the model if needed…"})
         tokenizer, model = await run_sync(load_bimo, token)
         provider = BimoProvider(tokenizer, model)
-        await updates.put({"status": "OpenHarness is running the Bimo review…"})
+        device = "CPU" if model is not None and model.device.type == "cpu" else "GPU"
+        await updates.put({"status": f"OpenHarness is running Bimo on the Space {device}…"})
         prompt = review.prompt
         if review.notes:
             prompt += "\n\nBrowser review draft (untrusted evidence)\n" + review.notes
@@ -210,7 +226,7 @@ async def review_bimo(review, token, updates):
         await updates.put({"error": str(exc)})
     except Exception as exc:
         logger.error("Bimo review failed (%s)", type(exc).__name__)
-        await updates.put({"error": "Bimo could not load or generate. Check model access and GPU memory."})
+        await updates.put({"error": "Bimo could not load or generate. Check model access and available Space memory."})
     finally:
         await updates.put(None)
 

@@ -21,7 +21,7 @@
         <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="hf_…" maxlength="253">
         <button id="clear" type="button" class="secondary">Clear token</button>
       </div>
-      <p class="hint">Use a read token with access to each gated repository. The token is kept in this page, sent to the Space for Bimo access checks, and sent directly to Hugging Face for XORTRON.</p>
+      <p class="hint">Use a read token with access to the model repositories. The token is kept in this page, sent to the Space for Bimo access checks, and sent directly to Hugging Face for XORTRON.</p>
       <p class="links">
         <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer">Token settings</a>
         <a href="https://huggingface.co/iBimo-o/Bimo-7B-CyberAgent" target="_blank" rel="noreferrer">Bimo access</a>
@@ -36,7 +36,7 @@
     </section>
     <div class="grid">
       <section class="panel" aria-labelledby="bimo-title">
-        <p class="eyebrow">Space GPU</p>
+        <p class="eyebrow">Space CPU or GPU</p>
         <h2 id="bimo-title">Bimo 7B + OpenHarness</h2>
         <button id="bimo" type="button">Run Bimo review</button>
         <label class="check"><input id="include-local" type="checkbox"> Send the browser review to Bimo as notes</label>
@@ -52,13 +52,18 @@
           <button id="files" type="button" class="secondary">Find GGUF files</button>
           <select id="weights" aria-label="XORTRON GGUF file" disabled><option>Find available files first</option></select>
         </div>
+        <details class="hint"><summary>GPU memory settings</summary>
+          <label for="layers">Layers to offload (0 means all)</label>
+          <input id="layers" type="number" min="0" max="999" value="0">
+          <p>Try a smaller positive number if the model does not fit in VRAM. Remaining layers run on the CPU.</p>
+        </details>
         <div class="row actions">
           <button id="load" type="button" disabled>Load with WebGPU</button>
           <button id="unload" type="button" class="secondary" disabled>Unload model</button>
         </div>
         <label class="check"><input id="include-bimo" type="checkbox" checked> Include Bimo's draft in the browser review</label>
         <button id="local" type="button" disabled>Run browser review</button>
-        <p id="local-status" class="hint" role="status">Choose a small Q4 GGUF for your first load. Weights may take several GB of browser storage.</p>
+        <p id="local-status" class="hint" role="status">The smallest published file is about 10.9 GB. Use a current Chromium browser on a machine with ample GPU memory and browser storage.</p>
         <pre id="local-output" aria-label="Browser model output"></pre>
       </section>
     </div>
